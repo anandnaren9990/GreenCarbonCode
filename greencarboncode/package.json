@@ -44,6 +44,7 @@
   "dependencies": {
     "@babel/parser": "^7.28.5",
     "esprima": "^4.0.1",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "java-parser": "^3.0.1"
   }
 }
