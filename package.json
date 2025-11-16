@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "java-parser": "^3.0.1"
+  }
+}

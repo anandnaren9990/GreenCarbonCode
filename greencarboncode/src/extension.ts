@@ -4,6 +4,8 @@ import * as vscode from 'vscode';
 
 import * as esprima from "esprima";
 
+
+
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -62,6 +64,24 @@ function estimateCarbon(code: string): number {
         if (['javascript', 'typescript', 'javascriptreact', 'typescriptreact'].includes(languageId)) {
             const ast = esprima.parseScript(code, { tolerant: true });
             complexity = JSON.stringify(ast).length;
+        }
+        else if (languageId === 'java') {
+            // Heuristic: line count + weighted counts of methods, constructors, classes, interfaces, enums
+            const lines = code.split('\n').length;
+            // Match typical Java method signatures (return type + name + params)
+            const methodCount = (code.match(/(?:public|protected|private|static|\s)+\s+[\w\<\>\[\]]+\s+\w+\s*\([^)]*\)\s*\{/g) || []).length;
+            // Match constructors (access modifier + name + params + { )
+            const constructorCount = (code.match(/(?:public|protected|private)\s+\w+\s*\([^)]*\)\s*\{/g) || []).length;
+            const classCount = (code.match(/\bclass\s+\w+/g) || []).length;
+            const interfaceCount = (code.match(/\binterface\s+\w+/g) || []).length;
+            const enumCount = (code.match(/\benum\s+\w+/g) || []).length;
+
+            complexity = lines
+                + (methodCount * 120)
+                + (constructorCount * 80)
+                + (classCount * 200)
+                + (interfaceCount * 150)
+                + (enumCount * 150);
         }
         // Handle Python
         else if (languageId === 'python') {
