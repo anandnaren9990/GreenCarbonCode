@@ -19,6 +19,14 @@
       {
         "command": "carbon.analyzeCurrentFile",
         "title": "Carbon: Analyze Current File"
+      },
+      {
+        "command": "carbon.generateGreenerCode",
+        "title": "Carbon: Generate Greener Code Suggestion"
+      },
+      {
+        "command": "carbon.generateGreenerCodeOllama",
+        "title": "Carbon: Generate Greener Code Suggestion (Ollama)"
       }
     ]
   },
@@ -44,7 +52,11 @@
   "dependencies": {
     "@babel/parser": "^7.28.5",
     "esprima": "^4.0.1",
-    "node-fetch": "^3.3.2",
-    "java-parser": "^3.0.1"
-  }
+    "java-parser": "^3.0.1",
+    "node-fetch": "^3.3.2"
+  },
+
+  "extensionDependencies": [
+    "GitHub.copilot"
+  ]
 }
