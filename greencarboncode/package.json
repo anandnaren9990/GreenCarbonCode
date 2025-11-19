@@ -25,8 +25,16 @@
         "title": "Carbon: Generate Greener Code Suggestion"
       },
       {
-        "command": "carbon.generateGreenerCodeOllama",
-        "title": "Carbon: Generate Greener Code Suggestion (Ollama)"
+        "command": "carbon.showInsights",
+        "title": "Carbon: Show Insights Dashboard"
+      },
+      {
+        "command": "carbon.clearHistory",
+        "title": "Carbon: Clear History"
+      },
+      {
+        "command": "carbon.clearCodeCache",
+        "title": "Carbon: Clear Code Cache"
       }
     ]
   },

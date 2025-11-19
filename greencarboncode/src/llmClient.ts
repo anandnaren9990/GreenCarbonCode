@@ -1,6 +1,17 @@
 import * as vscode from 'vscode';
 
+// Simple in-memory cache
+const codeCache = new Map<string, string>();
+const testCache = new Map<string, string>();
+
 export async function getGreenerCodeSuggestionWithCopilot(code: string): Promise<string> {
+  // Check cache first
+  const cacheKey = hashCode(code);
+  if (codeCache.has(cacheKey)) {
+    console.log('[greencarbon] Returning cached Copilot suggestion');
+    return codeCache.get(cacheKey)!;
+  }
+
   const prompt = `You are a code optimization expert focused on reducing computational carbon footprint.
 Analyze the following code and suggest a more efficient, greener alternative that:
 1. Reduces time complexity where possible
@@ -16,6 +27,7 @@ ${code}
 Provide only the optimized code without explanations.`;
 
   try {
+    console.log('[greencarbon] Calling Copilot API...');
     // Use Copilot's language model through VS Code's built-in API
     const [model] = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4' });
     
@@ -34,9 +46,87 @@ Provide only the optimized code without explanations.`;
       optimizedCode += chunk;
     }
 
-    return optimizedCode.trim();
+    const trimmedCode = optimizedCode.trim();
+
+    // Store in cache
+    codeCache.set(cacheKey, trimmedCode);
+    console.log('[greencarbon] Cached new Copilot suggestion');
+
+    return trimmedCode;
   } catch (error) {
     console.error("Copilot Error:", error);
     throw error;
   }
+}
+
+export async function generateTestCasesWithCopilot(code: string, language: string): Promise<string> {
+  // Check cache first
+  const cacheKey = hashCode(code + language);
+  if (testCache.has(cacheKey)) {
+    console.log('[greencarbon] Returning cached test cases');
+    return testCache.get(cacheKey)!;
+  }
+
+  const prompt = `Generate comprehensive test cases for the following ${language} code.
+Include:
+1. Unit tests for all functions/methods
+2. Edge cases (empty inputs, null values, boundary conditions)
+3. Normal use cases
+4. Error handling tests
+
+Code to test:
+\`\`\`${language}
+${code}
+\`\`\`
+
+Provide only the test code in the appropriate testing framework for ${language} (e.g., Jest for JavaScript, pytest for Python, JUnit for Java).`;
+
+  try {
+    console.log('[greencarbon] Calling Copilot API for test cases...');
+    const [model] = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4' });
+    
+    if (!model) {
+      throw new Error('Copilot model not available.');
+    }
+
+    const messages = [
+      vscode.LanguageModelChatMessage.User(prompt)
+    ];
+
+    const chatResponse = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+    
+    let testCases = '';
+    for await (const chunk of chatResponse.text) {
+      testCases += chunk;
+    }
+
+    const trimmedTests = testCases.trim();
+
+    // Store in cache
+    testCache.set(cacheKey, trimmedTests);
+    console.log('[greencarbon] Cached new test cases');
+
+    return trimmedTests;
+  } catch (error) {
+    console.error("Copilot Test Generation Error:", error);
+    return "// Failed to generate test cases";
+  }
+}
+
+// Simple hash function for cache key
+function hashCode(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return hash.toString();
+}
+
+// Clear cache function (optional)
+export function clearCodeCache() {
+  codeCache.clear();
+  testCache.clear();
+  console.log('[greencarbon] Copilot cache cleared');
 }
