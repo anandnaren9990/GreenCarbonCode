@@ -3,8 +3,9 @@ import * as vscode from 'vscode';
 // Simple in-memory cache
 const codeCache = new Map<string, string>();
 const testCache = new Map<string, string>();
+const explanationCache = new Map<string, string>();
 
-export async function getGreenerCodeSuggestionWithCopilot(code: string): Promise<string> {
+export async function getGreenerCodeSuggestionWithCopilot(code: string, language?: string): Promise<string> {
   // Check cache first
   const cacheKey = hashCode(code);
   if (codeCache.has(cacheKey)) {
@@ -13,14 +14,14 @@ export async function getGreenerCodeSuggestionWithCopilot(code: string): Promise
   }
 
   const prompt = `You are a code optimization expert focused on reducing computational carbon footprint.
-Analyze the following code and suggest a more efficient, greener alternative that:
+Analyze the following ${language || 'code'} and suggest a more efficient, greener alternative that:
 1. Reduces time complexity where possible
 2. Minimizes memory allocations
 3. Reduces unnecessary loops or I/O operations
 4. Maintains the same functionality
 
 Original code:
-\`\`\`
+\`\`\`${language || ''}
 ${code}
 \`\`\`
 
@@ -28,7 +29,6 @@ Provide only the optimized code without explanations.`;
 
   try {
     console.log('[greencarbon] Calling Copilot API...');
-    // Use Copilot's language model through VS Code's built-in API
     const [model] = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4' });
     
     if (!model) {
@@ -59,8 +59,68 @@ Provide only the optimized code without explanations.`;
   }
 }
 
+export async function generateExplanationWithCopilot(originalCode: string, optimizedCode: string, language: string): Promise<string> {
+  // Check cache first - use combination of both codes for cache key
+  const cacheKey = hashCode(originalCode + optimizedCode + language);
+  if (explanationCache.has(cacheKey)) {
+    console.log('[greencarbon] Returning cached explanation');
+    return explanationCache.get(cacheKey)!;
+  }
+
+  const prompt = `Compare the following original and optimized ${language} code and explain the key differences.
+Focus on:
+1. What optimizations were made and why
+2. How these changes reduce computational complexity
+3. How these changes reduce carbon footprint
+4. Performance improvements expected
+5. Memory usage improvements
+
+Original Code:
+\`\`\`${language}
+${originalCode}
+\`\`\`
+
+Optimized Code:
+\`\`\`${language}
+${optimizedCode}
+\`\`\`
+
+Provide a clear, structured explanation of the differences and improvements.`;
+
+  try {
+    console.log('[greencarbon] Calling Copilot API for explanation...');
+    const [model] = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4' });
+    
+    if (!model) {
+      throw new Error('Copilot model not available.');
+    }
+
+    const messages = [
+      vscode.LanguageModelChatMessage.User(prompt)
+    ];
+
+    const chatResponse = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+    
+    let explanation = '';
+    for await (const chunk of chatResponse.text) {
+      explanation += chunk;
+    }
+
+    const trimmedExplanation = explanation.trim();
+
+    // Store in cache
+    explanationCache.set(cacheKey, trimmedExplanation);
+    console.log('[greencarbon] Cached new explanation');
+
+    return trimmedExplanation;
+  } catch (error) {
+    console.error("Copilot Explanation Error:", error);
+    return "// Failed to generate explanation";
+  }
+}
+
 export async function generateTestCasesWithCopilot(code: string, language: string): Promise<string> {
-  // Check cache first
+  // Check cache first - use code + language for cache key
   const cacheKey = hashCode(code + language);
   if (testCache.has(cacheKey)) {
     console.log('[greencarbon] Returning cached test cases');
@@ -128,5 +188,16 @@ function hashCode(str: string): string {
 export function clearCodeCache() {
   codeCache.clear();
   testCache.clear();
-  console.log('[greencarbon] Copilot cache cleared');
+  explanationCache.clear();
+  console.log('[greencarbon] All Copilot caches cleared (code, tests, explanations)');
+}
+
+// Get cache statistics
+export function getCacheStats() {
+  return {
+    codeCacheSize: codeCache.size,
+    testCacheSize: testCache.size,
+    explanationCacheSize: explanationCache.size,
+    totalCacheSize: codeCache.size + testCache.size + explanationCache.size
+  };
 }

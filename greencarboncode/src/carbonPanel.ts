@@ -60,24 +60,50 @@ export class CarbonInsightsPanel {
     private _getHtmlForWebview(webview: vscode.Webview): string {
         const history = this.historyManager.getHistory();
         const totalReduction = this.historyManager.getTotalReduction();
+        const stats = this.historyManager.getStats();
 
         const historyRows = history.map(insight => {
             const date = new Date(insight.timestamp).toLocaleString();
             const reductionColor = insight.reduction >= 0 ? '#4caf50' : '#f44336';
+            const countBadge = insight.optimizationCount > 1 
+                ? `<span style="background: #ff9800; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 8px;">${insight.optimizationCount}x</span>`
+                : '';
             
             return `
                 <tr>
                     <td>${date}</td>
-                    <td>${insight.fileName}</td>
+                    <td>${insight.fileName}${countBadge}</td>
                     <td>${insight.language}</td>
-                    <td>${insight.originalCarbon.toFixed(8)}</td>
-                    <td>${insight.optimizedCarbon.toFixed(8)}</td>
+                    <td>${insight.originalCarbon.toFixed(10)}</td>
+                    <td>${insight.optimizedCarbon.toFixed(10)}</td>
                     <td style="color: ${reductionColor}; font-weight: bold;">
-                        ${insight.reduction.toFixed(8)} (${insight.percentReduction}%)
+                        ${insight.reduction.toFixed(10)} (${insight.percentReduction}%)
                     </td>
                 </tr>
             `;
         }).join('');
+
+        // Prepare chart data
+        const chartData = history.slice(0, 10).reverse().map(insight => ({
+            label: insight.fileName.substring(0, 15) + (insight.fileName.length > 15 ? '...' : ''),
+            original: insight.originalCarbon,
+            optimized: insight.optimizedCarbon,
+            reduction: insight.reduction
+        }));
+
+        const chartLabels = JSON.stringify(chartData.map(d => d.label));
+        const chartOriginal = JSON.stringify(chartData.map(d => d.original.toFixed(10)));
+        const chartOptimized = JSON.stringify(chartData.map(d => d.optimized.toFixed(10)));
+
+        // Language distribution
+        const languageReduction: { [key: string]: number } = {};
+        history.forEach(insight => {
+            languageReduction[insight.language] = (languageReduction[insight.language] || 0) + insight.reduction;
+        });
+
+        const pieLabels = JSON.stringify(Object.keys(languageReduction));
+        const pieData = JSON.stringify(Object.values(languageReduction).map(v => v.toFixed(10)));
+        const pieColors = ['#4caf50', '#2196f3', '#ff9800', '#e91e63', '#9c27b0', '#00bcd4', '#8bc34a'];
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -85,6 +111,7 @@ export class CarbonInsightsPanel {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Carbon Footprint Insights</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         body {
             font-family: var(--vscode-font-family);
@@ -112,6 +139,24 @@ export class CarbonInsightsPanel {
             color: #4caf50;
             margin: 10px 0;
         }
+        .charts-container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .chart-box {
+            background: var(--vscode-editor-inactiveSelectionBackground);
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .chart-box h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        canvas {
+            max-height: 300px;
+        }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -138,6 +183,11 @@ export class CarbonInsightsPanel {
             font-size: 48px;
             margin-bottom: 20px;
         }
+        @media (max-width: 768px) {
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -148,10 +198,23 @@ export class CarbonInsightsPanel {
         <div class="stat">
             Total Carbon Reduced: ${totalReduction.toFixed(8)} g CO₂
         </div>
-        <div>Total Optimizations: ${history.length}</div>
+        <div>Total Optimizations: ${stats.totalOptimizations}</div>
+        <div>Unique Files: ${stats.uniqueFiles}</div>
+        <div>Most Optimized: ${stats.mostOptimizedFile} (${stats.mostOptimizedCount}x)</div>
     </div>
 
     ${history.length > 0 ? `
+        <div class="charts-container">
+            <div class="chart-box">
+                <h3>📊 Carbon Reduction Trend (Latest 10)</h3>
+                <canvas id="barChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <h3>🥧 Reduction by Language</h3>
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+
         <table>
             <thead>
                 <tr>
@@ -167,6 +230,76 @@ export class CarbonInsightsPanel {
                 ${historyRows}
             </tbody>
         </table>
+
+        <script>
+            const textColor = getComputedStyle(document.body).getPropertyValue('--vscode-foreground');
+            const gridColor = getComputedStyle(document.body).getPropertyValue('--vscode-panel-border');
+
+            const barCtx = document.getElementById('barChart').getContext('2d');
+            new Chart(barCtx, {
+                type: 'bar',
+                data: {
+                    labels: ${chartLabels},
+                    datasets: [
+                        {
+                            label: 'Original CO₂',
+                            data: ${chartOriginal},
+                            backgroundColor: 'rgba(244, 67, 54, 0.6)',
+                            borderColor: 'rgba(244, 67, 54, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Optimized CO₂',
+                            data: ${chartOptimized},
+                            backgroundColor: 'rgba(76, 175, 80, 0.6)',
+                            borderColor: 'rgba(76, 175, 80, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            labels: { color: textColor }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: textColor },
+                            grid: { color: gridColor }
+                        },
+                        y: {
+                            ticks: { color: textColor },
+                            grid: { color: gridColor },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            const pieCtx = document.getElementById('pieChart').getContext('2d');
+            new Chart(pieCtx, {
+                type: 'pie',
+                data: {
+                    labels: ${pieLabels},
+                    datasets: [{
+                        data: ${pieData},
+                        backgroundColor: ${JSON.stringify(pieColors)}
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            labels: { color: textColor }
+                        }
+                    }
+                }
+            });
+        </script>
     ` : `
         <div class="empty-state">
             <div class="icon">📊</div>

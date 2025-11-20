@@ -12,7 +12,7 @@ export interface CarbonMetrics {
 
 /**
  * Analyze code metrics for multiple languages.
- * languageId should be the VS Code document.languageId (e.g. 'javascript','typescript','python','java').
+ * languageId should be the VS Code document.languageId (e.g. 'javascript','typescript','python','java','csharp','shellscript','plsql').
  */
 export function analyzeCodeMetrics(code: string, languageId: string = "javascript"): CarbonMetrics {
   const metrics: CarbonMetrics = {
@@ -61,7 +61,6 @@ export function analyzeCodeMetrics(code: string, languageId: string = "javascrip
             break;
 
           case "CallExpression":
-            // callee can be Identifier or MemberExpression
             const calleeName = node.callee && (node.callee.name || (node.callee.property && node.callee.property.name));
             if (calleeName && (calleeName === "console" || calleeName === "print" || calleeName === "fetch" || calleeName === "readFileSync")) {
               metrics.ioOps++;
@@ -91,7 +90,6 @@ export function analyzeCodeMetrics(code: string, languageId: string = "javascrip
 
     // Java heuristics (regex-based)
     if (lang === "java") {
-      const lines = metrics.lines;
       const loopMatches = code.match(/\bfor\s*\(|\bwhile\s*\(|\bdo\s*\{/g) || [];
       const ifMatches = code.match(/\bif\s*\(|\belse\s+if\s*\(/g) || [];
       const switchMatches = code.match(/\bswitch\s*\(/g) || [];
@@ -129,9 +127,70 @@ export function analyzeCodeMetrics(code: string, languageId: string = "javascrip
       return metrics;
     }
 
+    // C# heuristics (regex-based)
+    if (lang === "csharp" || lang === "cs") {
+      const loopMatches = code.match(/\bfor\s*\(|\bforeach\s*\(|\bwhile\s*\(|\bdo\s*\{/g) || [];
+      const ifMatches = code.match(/\bif\s*\(|\belse\s+if\s*\(/g) || [];
+      const switchMatches = code.match(/\bswitch\s*\(/g) || [];
+      const methodMatches = code.match(/(?:public|protected|private|internal|static|virtual|override|async|\s)+\s+[\w\<\>\[\]]+\s+\w+\s*\([^)]*\)\s*\{/g) || [];
+      const propertyMatches = code.match(/(?:public|protected|private|internal|\s)+\s+[\w\<\>\[\]]+\s+\w+\s*\{\s*get;?\s*set;?\s*\}/g) || [];
+      const newMatches = code.match(/\bnew\s+[A-Za-z0-9_\<\>\[\]]+/g) || [];
+      const linqMatches = code.match(/\.Select\(|\.Where\(|\.OrderBy\(|\.GroupBy\(|\.ToList\(|\.ToArray\(/g) || [];
+      const ioMatches = code.match(/Console\.Write|Console\.Read|File\.Read|File\.Write|StreamReader|StreamWriter|HttpClient|SqlConnection|DbContext/g) || [];
+
+      metrics.loops = loopMatches.length;
+      metrics.conditions = ifMatches.length + switchMatches.length;
+      metrics.functionCount = methodMatches.length + propertyMatches.length;
+      metrics.ioOps = ioMatches.length;
+      metrics.memoryAllocations = newMatches.length + linqMatches.length;
+      metrics.cyclomaticComplexity = 1 + metrics.loops + metrics.conditions;
+
+      return metrics;
+    }
+
+    // Shell scripting heuristics (regex-based)
+    if (lang === "shellscript" || lang === "shell" || lang === "bash" || lang === "sh") {
+      const loopMatches = code.match(/\bfor\s+\w+\s+in|\bwhile\s+\[|\buntil\s+\[/g) || [];
+      const ifMatches = code.match(/\bif\s+\[|\belif\s+\[|\bcase\s+/g) || [];
+      const functionMatches = code.match(/^\s*function\s+\w+|^\s*\w+\s*\(\s*\)\s*\{/gm) || [];
+      const pipeMatches = code.match(/\|/g) || [];
+      const ioMatches = code.match(/\becho\b|\bprintf\b|\bread\b|\bcat\b|\bgrep\b|\bawk\b|\bsed\b|\bcurl\b|\bwget\b/g) || [];
+      const varMatches = code.match(/\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|=\s*\(/g) || [];
+      const commandSubMatches = code.match(/\$\(|\`/g) || [];
+
+      metrics.loops = loopMatches.length;
+      metrics.conditions = ifMatches.length;
+      metrics.functionCount = functionMatches.length;
+      metrics.ioOps = ioMatches.length + pipeMatches.length;
+      metrics.memoryAllocations = varMatches.length + commandSubMatches.length;
+      metrics.cyclomaticComplexity = 1 + metrics.loops + metrics.conditions;
+
+      return metrics;
+    }
+
+    // PL/SQL heuristics (regex-based)
+    if (lang === "plsql" || lang === "sql" || lang === "oracle") {
+      const loopMatches = code.match(/\bFOR\b|\bWHILE\b|\bLOOP\b/gi) || [];
+      const ifMatches = code.match(/\bIF\b|\bELSIF\b|\bCASE\s+WHEN\b/gi) || [];
+      const procedureMatches = code.match(/\bCREATE\s+(?:OR\s+REPLACE\s+)?PROCEDURE\b|\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\b/gi) || [];
+      const cursorMatches = code.match(/\bCURSOR\s+\w+\s+IS\b|\bOPEN\b|\bFETCH\b/gi) || [];
+      const selectMatches = code.match(/\bSELECT\b/gi) || [];
+      const dmlMatches = code.match(/\bINSERT\s+INTO\b|\bUPDATE\b|\bDELETE\s+FROM\b|\bMERGE\b/gi) || [];
+      const exceptionMatches = code.match(/\bEXCEPTION\s+WHEN\b/gi) || [];
+      const varMatches = code.match(/\bDECLARE\b|\b:\w+|%TYPE|%ROWTYPE/gi) || [];
+
+      metrics.loops = loopMatches.length;
+      metrics.conditions = ifMatches.length;
+      metrics.functionCount = procedureMatches.length;
+      metrics.ioOps = selectMatches.length + dmlMatches.length + cursorMatches.length;
+      metrics.memoryAllocations = varMatches.length + cursorMatches.length;
+      metrics.cyclomaticComplexity = 1 + metrics.loops + metrics.conditions + exceptionMatches.length;
+
+      return metrics;
+    }
+
     // Fallback for other languages: simple heuristics
     {
-      const lines = metrics.lines;
       const loops = (code.match(/\bfor\b|\bwhile\b/g) || []).length;
       const conditions = (code.match(/\bif\b|\belse\b|\bswitch\b/g) || []).length;
       const functions = (code.match(/\bfunction\b|\bdef\b|\bfunc\b|\bvoid\b|\bint\b/g) || []).length;
@@ -148,7 +207,6 @@ export function analyzeCodeMetrics(code: string, languageId: string = "javascrip
       return metrics;
     }
   } catch (err) {
-    // In case a parser fails, return best-effort metrics already collected
     console.error("analyzeCodeMetrics error:", err);
     return metrics;
   }

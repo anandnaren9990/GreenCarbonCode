@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { analyzeCodeMetrics } from "./analyzer";
 import { estimateEnergy } from "./energyModel";
 import { estimateCarbonFromEnergy } from "./carbonModel";
-import { getGreenerCodeSuggestionWithCopilot, clearCodeCache, generateTestCasesWithCopilot } from "./llmClient";
+import { getGreenerCodeSuggestionWithCopilot, clearCodeCache, generateTestCasesWithCopilot, generateExplanationWithCopilot } from "./llmClient";
 import CarbonHistoryManager from './carbonHistory';
 import { CarbonInsightsPanel } from './carbonPanel';
 
@@ -89,7 +89,7 @@ export function activate(context: vscode.ExtensionContext) {
                     const newMetrics = analyzeCodeMetrics(optimizedCode, lang);
                     const newEnergy = estimateEnergy(newMetrics);
                     const newCarbon = estimateCarbonFromEnergy(newEnergy.energyKWh);
-
+                    statusBar.text = `🌱 New Carbon: ${newCarbon.toFixed(10)} g CO₂`;
                     // Show comparison
                     const carbonReduction = oldCarbon - newCarbon;
                     const percentReduction = ((carbonReduction / oldCarbon) * 100).toFixed(5);
@@ -98,7 +98,7 @@ export function activate(context: vscode.ExtensionContext) {
                     console.log('[greencarbon] Carbon Reduction:', carbonReduction, 'g CO₂');
                     console.log('[greencarbon] Percent Reduction:', percentReduction, '%');
 
-                    // Save to history
+                    // Save to history with original code for frequency tracking
                     historyManager.addInsight({
                         timestamp: Date.now(),
                         fileName: fileName,
@@ -107,11 +107,43 @@ export function activate(context: vscode.ExtensionContext) {
                         optimizedCarbon: newCarbon,
                         reduction: carbonReduction,
                         percentReduction: percentReduction,
-                    });
+                    }, originalCode); // Pass original code for hash generation
+
+                    // Check how many times this code has been optimized
+                    const optimizationCount = historyManager.getOptimizationCount(originalCode);
+                    
+                    if (optimizationCount > 1) {
+                        vscode.window.showInformationMessage(
+                            `ℹ️ This code has been optimized ${optimizationCount} times before.`
+                        );
+                    }
 
                     vscode.window.showInformationMessage(
                         `🌿 Carbon Footprint:\nOriginal: ${oldCarbon.toFixed(10)} g CO₂\nOptimized: ${newCarbon.toFixed(10)} g CO₂\nReduction: ${percentReduction}%`
                     );
+                    
+                                        // Generate explanation of differences
+                    console.log('[greencarbon] Generating explanation of optimizations...');
+                    vscode.window.showInformationMessage("📝 Generating explanation of optimizations...");
+                    
+                    try {
+                        const explanation = await generateExplanationWithCopilot(originalCode, optimizedCode, lang);
+                        console.log('[greencarbon] Received explanation length:', explanation ? explanation.length : 0);
+
+                        if (explanation) {
+                            // Open explanation in a new editor
+                            const explanationDoc = await vscode.workspace.openTextDocument({
+                                content: `# Optimization Explanation\n\n${explanation}\n\n---\n\n## Carbon Footprint Comparison\n- Original: ${oldCarbon.toFixed(10)} g CO₂\n- Optimized: ${newCarbon.toFixed(10)} g CO₂\n- Reduction: ${carbonReduction.toFixed(10)} g CO₂ (${percentReduction}%)`,
+                                language: 'markdown',
+                            });
+                            await vscode.window.showTextDocument(explanationDoc, vscode.ViewColumn.Beside);
+                            
+                            vscode.window.showInformationMessage("✅ Explanation generated!");
+                        }
+                    } catch (explainError) {
+                        console.error('[greencarbon] Explanation generation error:', explainError);
+                        vscode.window.showWarningMessage("⚠️ Failed to generate explanation.");
+                    }
 
                     // Generate test cases for the optimized code
                     console.log('[greencarbon] Generating test cases for optimized code...');
