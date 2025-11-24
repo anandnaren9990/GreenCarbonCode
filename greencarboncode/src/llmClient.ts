@@ -173,6 +173,57 @@ Provide only the test code in the appropriate testing framework for ${language} 
   }
 }
 
+
+
+const architectureCache = new Map<string, string>();
+
+export async function getOptimizedArchitectureWithCopilot(architectureText: string): Promise<string> {
+  const cacheKey = hashCode(architectureText);
+  if (architectureCache.has(cacheKey)) {
+    console.log('[greencarbon] Returning cached optimized architecture');
+    return architectureCache.get(cacheKey)!;
+  }
+
+  const prompt = `You are a software architecture expert focused on sustainability and green computing.
+Review the following high-level architecture document. Identify and remove redundant, deprecated, or non-permitted technologies, and suggest a greener, more efficient architecture. 
+Provide only the improved architecture document in markdown format.
+
+Original architecture:
+\`\`\`markdown
+${architectureText}
+\`\`\`
+`;
+
+  try {
+    console.log('[greencarbon] Calling Copilot API for architecture optimization...');
+    const [model] = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4' });
+
+    if (!model) {
+      throw new Error('Copilot model not available.');
+    }
+
+    const messages = [
+      vscode.LanguageModelChatMessage.User(prompt)
+    ];
+
+    const chatResponse = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+    let optimizedDoc = '';
+    for await (const chunk of chatResponse.text) {
+      optimizedDoc += chunk;
+    }
+
+    const trimmedDoc = optimizedDoc.trim();
+    architectureCache.set(cacheKey, trimmedDoc);
+    console.log('[greencarbon] Cached optimized architecture');
+    return trimmedDoc;
+  } catch (error) {
+    console.error("Copilot Architecture Optimization Error:", error);
+    throw error;
+  }
+}
+
+
 // Simple hash function for cache key
 function hashCode(str: string): string {
   let hash = 0;

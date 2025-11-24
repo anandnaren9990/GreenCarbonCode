@@ -35,6 +35,10 @@
       {
         "command": "carbon.clearCodeCache",
         "title": "Carbon: Clear Code Cache"
+      },
+      {
+        "command": "carbon.optimizeArchitecture",
+        "title": "Carbon: Optimize Software Architecture"
       }
     ]
   },

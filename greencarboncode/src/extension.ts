@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { analyzeCodeMetrics } from "./analyzer";
 import { estimateEnergy } from "./energyModel";
 import { estimateCarbonFromEnergy } from "./carbonModel";
-import { getGreenerCodeSuggestionWithCopilot, clearCodeCache, generateTestCasesWithCopilot, generateExplanationWithCopilot } from "./llmClient";
+import { getGreenerCodeSuggestionWithCopilot, clearCodeCache, generateTestCasesWithCopilot, generateExplanationWithCopilot, getOptimizedArchitectureWithCopilot } from "./llmClient";
 import CarbonHistoryManager from './carbonHistory';
 import { CarbonInsightsPanel } from './carbonPanel';
 
@@ -38,6 +38,58 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage(`Estimated Carbon Footprint: ${carbon.toFixed(10)} g CO₂`);
         statusBar.text = `🌱 Carbon: ${carbon.toFixed(10)} g CO₂`;
     });
+
+    const optimizeArchitectureCmd = vscode.commands.registerCommand("carbon.optimizeArchitecture", async () => {
+    const uris = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        openLabel: "Select Architecture Document",
+        filters: {
+            'Text or Markdown': ['txt', 'md'],
+            'All Files': ['*']
+        }
+    });
+    if (!uris || uris.length === 0) {
+        vscode.window.showInformationMessage("No architecture document selected.");
+        return;
+    }
+    const docUri = uris[0];
+    try {
+        const doc = await vscode.workspace.openTextDocument(docUri);
+        const architectureText = doc.getText();
+        if (!architectureText || architectureText.trim().length === 0) {
+            vscode.window.showWarningMessage("The selected document is empty.");
+            return;
+        }
+        vscode.window.showInformationMessage("Optimizing architecture document...");
+
+        const optimizedText = await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: "🌱 Optimizing architecture with Copilot...",
+                cancellable: false,
+            },
+            async () => {
+                return await getOptimizedArchitectureWithCopilot(architectureText);
+            }
+        );
+
+        if (!optimizedText) {
+            vscode.window.showErrorMessage("No optimized architecture returned.");
+            return;
+        }
+
+        const newDoc = await vscode.workspace.openTextDocument({
+            content: optimizedText,
+            language: doc.languageId || 'markdown',
+        });
+        await vscode.window.showTextDocument(newDoc, vscode.ViewColumn.Beside);
+
+        vscode.window.showInformationMessage("✅ Optimized architecture generated!");
+    } catch (err) {
+        vscode.window.showErrorMessage("Failed to optimize the selected document.");
+    }
+    });
+
 
     // Register Generate Greener Code Command (Copilot)
     const generateGreenerCodeCmd = vscode.commands.registerCommand("carbon.generateGreenerCode", async () => {
@@ -192,6 +244,8 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(generateGreenerCodeCmd);
     context.subscriptions.push(showInsightsCmd);
     context.subscriptions.push(clearHistoryCmd);
+    context.subscriptions.push(optimizeArchitectureCmd);
+
 
     // Register Clear Code Cache Command
     const clearCacheCmd = vscode.commands.registerCommand("carbon.clearCache", () => {
